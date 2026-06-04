@@ -30,6 +30,8 @@ LOGS_DIR = ROOT / "logs"
 STATE_PATH = ROOT / "state.json"  # 记录每个站点上次状态 + 连续失败计数
 LOGS_DIR.mkdir(exist_ok=True)
 
+# iMessage 是主告警通道(微信 iLink 限流不稳);双通道都试,任一成功即可
+NOTIFY_IMESSAGE = Path.home() / ".claude/bin/notify-imessage.sh"
 NOTIFY_WECHAT = Path.home() / ".claude/bin/notify-wechat.py"
 
 
@@ -51,22 +53,47 @@ def save_state(state: dict) -> None:
 
 
 def notify(msg: str) -> None:
-    """微信通知 — 直接当 executable 跑(它有自己的 hermes venv shebang)"""
-    if not NOTIFY_WECHAT.exists() or not os.access(NOTIFY_WECHAT, os.X_OK):
-        print(f"[notify-skip] {msg}")
-        return
-    try:
-        result = subprocess.run(
-            [str(NOTIFY_WECHAT), msg],
-            timeout=20,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(f"[notify-fail rc={result.returncode}] {result.stderr[:200]}")
-    except Exception as e:
-        print(f"[notify-error] {e}: {msg}")
+    """告警通知 — 优先 iMessage(主通道,osascript),失败回退微信(hermes)"""
+    sent = False
+
+    # 主通道:iMessage(osascript → Messages.app → +8615627388666)
+    if NOTIFY_IMESSAGE.exists() and os.access(NOTIFY_IMESSAGE, os.X_OK):
+        try:
+            r = subprocess.run(
+                [str(NOTIFY_IMESSAGE), msg],
+                timeout=20,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode == 0:
+                sent = True
+                print(f"[notify-imessage OK]")
+            else:
+                print(f"[notify-imessage fail rc={r.returncode}] {r.stderr[:200]}")
+        except Exception as e:
+            print(f"[notify-imessage error] {e}")
+
+    # 回退通道:微信(iLink 可能限流但聊胜于无)
+    if not sent and NOTIFY_WECHAT.exists() and os.access(NOTIFY_WECHAT, os.X_OK):
+        try:
+            r = subprocess.run(
+                [str(NOTIFY_WECHAT), msg],
+                timeout=20,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode == 0 and "rate limited" not in (r.stderr or ""):
+                sent = True
+                print(f"[notify-wechat OK]")
+            else:
+                print(f"[notify-wechat fail] {(r.stderr or '')[:200]}")
+        except Exception as e:
+            print(f"[notify-wechat error] {e}")
+
+    if not sent:
+        print(f"[notify ALL FAILED] {msg[:200]}")
 
 
 def get_ssl_days_left(hostname: str, port: int = 443, timeout: int = 10) -> Optional[int]:

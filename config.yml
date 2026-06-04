@@ -37,12 +37,11 @@ sites:
     max_response_ms: 8000   # Vercel cold start 可能首次慢
     check_ssl: true
 
-  # ========== 海外英文 MCP(SinoVerdict) ==========
-  - name: sinoverdict-en
-    url: https://sinoverdict.com/
-    expected_status: [200, 301, 302, 307, 308]
-    max_response_ms: 8000
-    check_ssl: true
+  # ========== 海外英文 MCP(SinoVerdict)— 暂时移除 ==========
+  # sinoverdict.com 域名未注册,英文站(sinoverdict-site 项目)未对外上线
+  # Vercel direct URL 因 deployment protection 返回 401
+  # 待 Jack 决定:① 注册 sinoverdict.com 域名 / ② 绑 en.wenshucha.com 子域 / ③ 暂时不做海外渠道
+  # 决定后再加回 monitor
 
   # ========== 赔了吗主站 ==========
   - name: peilema-main

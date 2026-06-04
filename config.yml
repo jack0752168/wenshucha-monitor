@@ -37,11 +37,26 @@ sites:
     max_response_ms: 8000   # Vercel cold start 可能首次慢
     check_ssl: true
 
-  # ========== 海外英文 MCP(SinoVerdict)— 暂时移除 ==========
-  # sinoverdict.com 域名未注册,英文站(sinoverdict-site 项目)未对外上线
-  # Vercel direct URL 因 deployment protection 返回 401
-  # 待 Jack 决定:① 注册 sinoverdict.com 域名 / ② 绑 en.wenshucha.com 子域 / ③ 暂时不做海外渠道
-  # 决定后再加回 monitor
+  # ========== 海外英文站 SinoVerdict(2026-06-04 上线) ==========
+  # 域名走 sinoverdict.wenshucha.com(主域子域,免买新域名),Vercel 部署 + 全球 CDN
+  - name: sinoverdict-en
+    url: https://sinoverdict.wenshucha.com/
+    must_contain:
+      - "SinoVerdict"
+      - "130M+"
+    must_not_contain:
+      - "404 Not Found"
+      - "Application error"
+    max_response_ms: 8000   # 国内访问 Vercel 节点可能慢,放宽
+    check_ssl: true
+
+  - name: sinoverdict-robots
+    url: https://sinoverdict.wenshucha.com/robots.txt
+    must_contain:
+      - "sinoverdict.wenshucha.com"
+      - "Sitemap:"
+    max_response_ms: 8000
+    check_ssl: false   # robots.txt 不重复测 SSL,主站已测
 
   # ========== 赔了吗主站 ==========
   - name: peilema-main

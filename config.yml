@@ -1,0 +1,102 @@
+# wenshucha 全站健康监控配置
+# 每 15 分钟跑一次,连续 2 次失败发微信告警,SSL 14 天到期警告
+
+global:
+  timeout_sec: 15
+  user_agent: "wenshucha-monitor/1.0"
+  consecutive_fail_alert: 2     # 连续 N 次失败才告警(防误报)
+  ssl_warn_days: 14             # 证书 < 14 天到期告警
+
+# 检查目标(站点 + 各检查项)
+sites:
+
+  # ========== 文书查 To B 主站(腾讯云广州) ==========
+  - name: wenshucha-main
+    url: https://wenshucha.com/
+    must_contain:
+      - "深圳星谱网络科技"
+      - "1.5 亿"
+    must_not_contain:
+      - "Where are Wenshucha"      # 旧英文页防回归
+      - "404 Not Found"
+    max_response_ms: 5000
+    check_ssl: true
+
+  # ========== 律师工作台 ==========
+  - name: lawyer-workbench
+    url: https://tob.wenshucha.com/tob
+    expected_status: [200, 301, 302, 307, 308]
+    max_response_ms: 8000
+    check_ssl: true
+
+  # ========== MCP 接入站 ==========
+  - name: mcp-zh
+    url: https://mcp.wenshucha.com/
+    must_contain:
+      - "文书查"
+    max_response_ms: 8000   # Vercel cold start 可能首次慢
+    check_ssl: true
+
+  # ========== 海外英文 MCP(SinoVerdict) ==========
+  - name: sinoverdict-en
+    url: https://sinoverdict.com/
+    expected_status: [200, 301, 302, 307, 308]
+    max_response_ms: 8000
+    check_ssl: true
+
+  # ========== 赔了吗主站 ==========
+  - name: peilema-main
+    url: https://peilema.wenshucha.com/
+    must_contain:
+      - "赔了吗"
+    must_not_contain:
+      - "Application error"
+      - "Internal Server Error"
+    max_response_ms: 6000
+    check_ssl: true
+
+  # ========== 赔了吗小红书入站 ==========
+  # 注:Codex 那边小红书漏斗实现在迭代,UTM 追踪链路由 Codex 负责;
+  # monitor 只校验入口可达,不卡 UTM 参数(避免实现切换时反复告警)
+  - name: peilema-xhs
+    url: https://peilema.wenshucha.com/xhs
+    expected_status: [200, 301, 302, 307, 308]
+    max_response_ms: 6000
+
+  # ========== 赔了吗报告样例 ==========
+  - name: peilema-sample
+    url: https://peilema.wenshucha.com/sample
+    expected_status: [200]
+    max_response_ms: 5000
+
+  # ========== 赔了吗售后服务 ==========
+  - name: peilema-service
+    url: https://peilema.wenshucha.com/service
+    expected_status: [200]
+    max_response_ms: 5000
+
+  # ========== 数据满屋(同机房,顺手监控) ==========
+  - name: datahouseful
+    url: https://www.datahouseful.com/
+    expected_status: [200, 301, 302]
+    max_response_ms: 8000
+    check_ssl: false      # SSL 证书 SAN 不含 www 子域,但服务正常
+    verify_ssl: false     # 跳过 HTTPS 证书验证(hostname mismatch)
+
+  # ========== 文书查旧 URL 防回归(必须仍是 redirect 页) ==========
+  - name: wenshucha-legacy-contact
+    url: https://wenshucha.com/contact.html
+    must_contain:
+      - "已迁移"
+      - "https://wenshucha.com/"
+    must_not_contain:
+      - "Where are Wenshucha"
+    max_response_ms: 5000
+
+  - name: wenshucha-legacy-server1
+    url: https://wenshucha.com/server1.html
+    must_contain:
+      - "已迁移"
+    must_not_contain:
+      - "Government Solution"
+    max_response_ms: 5000

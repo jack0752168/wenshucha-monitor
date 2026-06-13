@@ -19,7 +19,7 @@ sites:
     must_not_contain:
       - "Where are Wenshucha"      # 旧英文页防回归
       - "404 Not Found"
-    max_response_ms: 5000
+    max_response_ms: 8000   # 腾讯云Lighthouse(2核2G)本就~3.4s偶尔冒5s,5000太紧会误报
     check_ssl: true
 
   # ========== 律师工作台 ==========
@@ -43,7 +43,7 @@ sites:
     url: https://sinoverdict.wenshucha.com/
     must_contain:
       - "SinoVerdict"
-      - "130M+"
+      - "Chinese"          # 稳定文案;原查"130M+"已过时(页面口径升级到170M),数字会变故改用稳定词
     must_not_contain:
       - "404 Not Found"
       - "Application error"

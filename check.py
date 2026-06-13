@@ -218,7 +218,10 @@ def main() -> int:
 
     cfg = yaml.safe_load(CONFIG_PATH.read_text())
     state = load_state()
-    consec_fail_alert = cfg.get("global", {}).get("consecutive_fail_alert", 2)
+    # 只有故障持续超过 alert_after_hours 小时才告警(默认 24h)。
+    # 期间自动恢复 = 完全静默不打扰。Jack 2026-06-10 要求(15min 抖动告警太频繁)。
+    alert_after_hours = cfg.get("global", {}).get("alert_after_hours", 24)
+    now_t = time.time()
 
     results = []
     now = now_iso()
@@ -231,25 +234,39 @@ def main() -> int:
         results.append(r)
 
         name = site["name"]
-        prev = state.get(name, {"consec_fail": 0, "last_ok": True})
-        prev_ok = prev.get("last_ok", True)
+        prev = state.get(name, {})
 
         if r["ok"]:
-            if not prev_ok:
-                # 恢复
+            # 只有「曾经告警过的长故障」恢复时才通知一次;短暂抖动(没到 24h 没告警)= 静默恢复
+            if prev.get("alerted") and prev.get("down_since"):
+                r["_down_hours"] = (now_t - prev["down_since"]) / 3600
                 recoveries.append(r)
-            state[name] = {"consec_fail": 0, "last_ok": True, "last_checked": now}
+            state[name] = {"last_ok": True, "down_since": None, "alerted": False, "last_checked": now}
         else:
-            new_count = prev.get("consec_fail", 0) + 1
+            down_since = prev.get("down_since") or now_t   # 本轮故障起点(首次失败时记下)
+            alerted = prev.get("alerted", False)
+            last_alert = prev.get("last_alert", 0)
+            dur_h = (now_t - down_since) / 3600
+            r["_down_hours"] = dur_h
+            r["_down_since_str"] = datetime.fromtimestamp(down_since).strftime("%Y-%m-%d %H:%M")
+            # 关键:只有持续 ≥ alert_after_hours 才告警;之后仍未恢复每隔同样时长最多再提醒一次
+            if dur_h >= alert_after_hours:
+                if not alerted:
+                    new_alerts.append(r)
+                    alerted = True
+                    last_alert = now_t
+                elif (now_t - last_alert) / 3600 >= alert_after_hours:
+                    new_alerts.append(r)  # 还没好,再提醒一次(避免遗忘,但不频繁)
+                    last_alert = now_t
+            # dur_h < 阈值 → 什么都不发,只默默记着 down_since,等它自愈或熬够时长
             state[name] = {
-                "consec_fail": new_count,
                 "last_ok": False,
+                "down_since": down_since,
+                "alerted": alerted,
+                "last_alert": last_alert,
                 "last_reason": r["reason"],
                 "last_checked": now,
             }
-            # 达到连续失败阈值才告警(每次到了阈值都发,但不重复每次失败都发)
-            if new_count == consec_fail_alert:
-                new_alerts.append(r)
 
     # 写日志(每天一份 JSONL)
     log_file = LOGS_DIR / f"check-{datetime.now().strftime('%Y-%m-%d')}.jsonl"
@@ -270,15 +287,18 @@ def main() -> int:
         print(f"  {flag} {r['name']:30} {ms:>8} {ssl_str:>9}{reason}")
 
     if new_alerts:
-        msg = f"【wenshucha 健康监控告警】{len(new_alerts)} 站连续失败:\n"
+        msg = f"【wenshucha 监控告警 · 故障已持续超 {alert_after_hours} 小时】\n"
         for r in new_alerts:
-            msg += f"\n• {r['name']}: {r['reason']}\n  {r['url']}"
+            hrs = r.get("_down_hours", 0)
+            msg += (f"\n• {r['name']}: {r['reason']}"
+                    f"\n  自 {r.get('_down_since_str','?')} 起已 down {hrs:.0f} 小时\n  {r['url']}")
         notify(msg)
 
     if recoveries:
-        msg = f"【wenshucha 监控恢复】{len(recoveries)} 站已恢复:\n"
+        msg = "【wenshucha 已恢复】\n"
         for r in recoveries:
-            msg += f"\n• {r['name']} OK"
+            hrs = r.get("_down_hours", 0)
+            msg += f"\n• {r['name']} 在 down {hrs:.0f} 小时后恢复正常"
         notify(msg)
 
     # exit 非 0 让 cron 能感知

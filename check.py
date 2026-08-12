@@ -127,6 +127,7 @@ def check_site(site: dict, cfg_global: dict) -> dict:
         "ok": False,
         "status": None,
         "reason": None,
+        "warn": None,          # 非故障级提醒(如证书临近到期):不影响 ok,走独立告警通道
         "response_ms": None,
         "ssl_days": None,
         "final_url": None,
@@ -173,7 +174,13 @@ def check_site(site: dict, cfg_global: dict) -> dict:
         return result
 
     # 响应时间
-    if result["response_ms"] > max_ms:
+    # ⚠️ 本监控跑在走 EPN 海外 VPN 的 Mac 上(全局 TUN,出口 202.68.183.224)。
+    # 访问**直连腾讯广州**的国内站(wenshucha.com 主站/旧页、datahouseful)时,流量要绕海外出口
+    # 再回国 → 响应时间凭空 +3~9s、且随 VPN 抖动,与真实用户(国内直连 ~0.3s)完全脱节,
+    # 只会周期性误报「响应慢」(2026-07-22 起 wenshucha.com 连报 169h 即此)。Vercel 全球 CDN 的站
+    # (tob/mcp/sinoverdict/peilema)不受影响,故保留响应时间告警。对被污染的站置 check_response_ms:false,
+    # 只靠状态码 + 关键词 + 15s 超时兜可用性(真挂了会超时/内容缺失,照样告警)。
+    if site.get("check_response_ms", True) and result["response_ms"] > max_ms:
         result["reason"] = f"响应慢 {result['response_ms']}ms > {max_ms}ms"
         return result
 
@@ -203,9 +210,13 @@ def check_site(site: dict, cfg_global: dict) -> dict:
             if days is None:
                 result["reason"] = "SSL 证书读取失败"
                 return result
+            # 证书「即将到期」是警告,不是故障:站还在正常服务 200。
+            # 2026-08-12 修:原本这里 return(ok=False)把健康站标成 down,
+            # 而证书还有 13 天 ⇒ 会连续 13 天判定为故障,并在 24h 后发出
+            # 「wenshucha-main 已 down 24 小时」这种与事实不符的告警。
+            # 改为走独立的 warn 通道(措辞是到期日,不是 down 时长)。
             if days < ssl_warn:
-                result["reason"] = f"SSL 证书 {days} 天后到期 (阈值 {ssl_warn})"
-                return result
+                result["warn"] = f"SSL 证书 {days} 天后到期 (阈值 {ssl_warn})"
 
     result["ok"] = True
     return result
@@ -226,6 +237,7 @@ def main() -> int:
     results = []
     now = now_iso()
     new_alerts = []
+    new_warns = []
     recoveries = []
 
     for site in cfg.get("sites", []):
@@ -241,7 +253,13 @@ def main() -> int:
             if prev.get("alerted") and prev.get("down_since"):
                 r["_down_hours"] = (now_t - prev["down_since"]) / 3600
                 recoveries.append(r)
-            state[name] = {"last_ok": True, "down_since": None, "alerted": False, "last_checked": now}
+            # 警告(证书临近到期)独立节流:同一目标最多每 alert_after_hours 提醒一次
+            last_warn = prev.get("last_warn_alert", 0)
+            if r.get("warn") and (now_t - last_warn) / 3600 >= alert_after_hours:
+                new_warns.append(r)
+                last_warn = now_t
+            state[name] = {"last_ok": True, "down_since": None, "alerted": False,
+                           "last_warn_alert": last_warn, "last_checked": now}
         else:
             down_since = prev.get("down_since") or now_t   # 本轮故障起点(首次失败时记下)
             alerted = prev.get("alerted", False)
@@ -264,6 +282,7 @@ def main() -> int:
                 "down_since": down_since,
                 "alerted": alerted,
                 "last_alert": last_alert,
+                "last_warn_alert": prev.get("last_warn_alert", 0),
                 "last_reason": r["reason"],
                 "last_checked": now,
             }
@@ -278,12 +297,14 @@ def main() -> int:
 
     # 控制台输出 + 微信通知
     ok_count = sum(1 for r in results if r["ok"])
-    print(f"[{now}] {ok_count}/{len(results)} OK")
+    warn_count = sum(1 for r in results if r.get("warn"))
+    print(f"[{now}] {ok_count}/{len(results)} OK" + (f" ({warn_count} 警告)" if warn_count else ""))
     for r in results:
-        flag = "✓" if r["ok"] else "✗"
+        flag = "⚠" if (r["ok"] and r.get("warn")) else ("✓" if r["ok"] else "✗")
         ssl_str = f"SSL {r['ssl_days']}d" if r.get("ssl_days") else ""
         ms = f"{r['response_ms']}ms" if r["response_ms"] else ""
-        reason = f" — {r['reason']}" if r.get("reason") else ""
+        note = r.get("reason") or r.get("warn")
+        reason = f" — {note}" if note else ""
         print(f"  {flag} {r['name']:30} {ms:>8} {ssl_str:>9}{reason}")
 
     if new_alerts:
@@ -292,6 +313,14 @@ def main() -> int:
             hrs = r.get("_down_hours", 0)
             msg += (f"\n• {r['name']}: {r['reason']}"
                     f"\n  自 {r.get('_down_since_str','?')} 起已 down {hrs:.0f} 小时\n  {r['url']}")
+        notify(msg)
+
+    # 警告(站正常服务,但有需要提前处理的事,如证书临近到期)。
+    # 措辞刻意不含「down / 故障」,免得把「还有 N 天到期」讲成「已经掛了」。
+    if new_warns:
+        msg = "【wenshucha 监控警告 · 站点正常,但需提前处理】\n"
+        for r in new_warns:
+            msg += f"\n• {r['name']}: {r['warn']}\n  {r['url']}"
         notify(msg)
 
     if recoveries:

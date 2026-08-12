@@ -14,12 +14,15 @@ sites:
   - name: wenshucha-main
     url: https://wenshucha.com/
     must_contain:
-      - "深圳星谱网络科技"
-      - "1.5 亿"
+      - "深圳星谱网络科技"   # 页脚公司名,稳定
+      - "文书查"           # 稳定词
+      # ⚠️ 原有 "1.5 亿" 已删:规模口径随数据增长会变(现已 1.6 亿),
+      #   查具体数字必周期性误报。同 sinoverdict 早学过的教训——内容检查只用稳定词,不用会变的数字。
     must_not_contain:
       - "Where are Wenshucha"      # 旧英文页防回归
       - "404 Not Found"
-    max_response_ms: 8000   # 腾讯云Lighthouse(2核2G)本就~3.4s偶尔冒5s,5000太紧会误报
+    max_response_ms: 8000
+    check_response_ms: false   # 监控走海外VPN测国内直连腾讯站,响应时间被绕道污染(真实~0.3s);只保状态码+关键词+超时兜可用性
     check_ssl: true
 
   # ========== 律师工作台 ==========
@@ -58,36 +61,39 @@ sites:
     max_response_ms: 8000
     check_ssl: false   # robots.txt 不重复测 SSL,主站已测
 
-  # ========== 赔了吗主站 ==========
-  - name: peilema-main
-    url: https://peilema.wenshucha.com/
-    must_contain:
-      - "赔了吗"
-    must_not_contain:
-      - "Application error"
-      - "Internal Server Error"
-    max_response_ms: 6000
-    check_ssl: true
-
-  # ========== 赔了吗小红书入站 ==========
-  # 注:Codex 那边小红书漏斗实现在迭代,UTM 追踪链路由 Codex 负责;
-  # monitor 只校验入口可达,不卡 UTM 参数(避免实现切换时反复告警)
-  - name: peilema-xhs
-    url: https://peilema.wenshucha.com/xhs
-    expected_status: [200, 301, 302, 307, 308]
-    max_response_ms: 6000
-
-  # ========== 赔了吗报告样例 ==========
-  - name: peilema-sample
-    url: https://peilema.wenshucha.com/sample
-    expected_status: [200]
-    max_response_ms: 5000
-
-  # ========== 赔了吗售后服务 ==========
-  - name: peilema-service
-    url: https://peilema.wenshucha.com/service
-    expected_status: [200]
-    max_response_ms: 5000
+  # ========== 赔了吗(4 个目标)— 2026-08-12 停用监控 ==========
+  # 原因:赔了吗已由 Jack 于 2026-08-11 决定下架,域名与路由均已下线,
+  #   `peilema.wenshucha.com` 现在连 DNS 记录都没有(dig 空,curl 000)。
+  #   ⇒ 这 4 个目标是在监控一个「故意删掉的产品」,必然永久失败:
+  #   自 08-11 02:43 起已连续红 36 小时,并会一直红下去。
+  #   监控里长期挂着一批永远红的目标,代价是真故障被淹没
+  #   ——jacktrader(唯一现金流资产)08-11 才刚补进本监控(BL-088),
+  #   如果面板常态是 10/15 红,它真掛的那天没人会看。
+  # 恢复方法:若赔了吗重新上线,取消下面注释即可(配置原样保留,未删)。
+  # - name: peilema-main
+  #   url: https://peilema.wenshucha.com/
+  #   must_contain:
+  #     - "赔了吗"
+  #   must_not_contain:
+  #     - "Application error"
+  #     - "Internal Server Error"
+  #   max_response_ms: 6000
+  #   check_ssl: true
+  #
+  # - name: peilema-xhs
+  #   url: https://peilema.wenshucha.com/xhs
+  #   expected_status: [200, 301, 302, 307, 308]
+  #   max_response_ms: 6000
+  #
+  # - name: peilema-sample
+  #   url: https://peilema.wenshucha.com/sample
+  #   expected_status: [200]
+  #   max_response_ms: 5000
+  #
+  # - name: peilema-service
+  #   url: https://peilema.wenshucha.com/service
+  #   expected_status: [200]
+  #   max_response_ms: 5000
 
   # ========== 数据满屋(同机房,顺手监控) ==========
   - name: datahouseful
@@ -96,21 +102,48 @@ sites:
     max_response_ms: 8000
     check_ssl: false      # SSL 证书 SAN 不含 www 子域,但服务正常
     verify_ssl: false     # 跳过 HTTPS 证书验证(hostname mismatch)
+    check_response_ms: false   # 同机房腾讯直连,监控走海外VPN测响应时间被污染
 
   # ========== 文书查旧 URL 防回归(必须仍是 redirect 页) ==========
   - name: wenshucha-legacy-contact
     url: https://wenshucha.com/contact.html
     must_contain:
-      - "已迁移"
-      - "https://wenshucha.com/"
+      - "文书查"           # 该旧URL现已是真实内容页(非跳转桩),用稳定词
     must_not_contain:
       - "Where are Wenshucha"
     max_response_ms: 5000
+    check_response_ms: false
 
   - name: wenshucha-legacy-server1
     url: https://wenshucha.com/server1.html
     must_contain:
-      - "已迁移"
+      - "文书查"           # 该旧URL现已是真实内容页(非跳转桩),用稳定词
     must_not_contain:
       - "Government Solution"
     max_response_ms: 5000
+    check_response_ms: false
+
+  # ========== jacktrader.xyz 返佣站(2026-08-11 补入) ==========
+  # 为什么现在才加:今天 Vercel 整帐号 402 封禁(FAIR_USE_LIMITS_EXCEEDED),
+  #   本站跟 sinoverdict/tob 一起掛了 13 小时,而它是唯一有现金流的资产(1-2万/月),
+  #   却是本监控 12 个目标里唯一没被覆盖的——盲点靠 biz-engine 巡检偶然发现,不是监控发现的。
+  # 只查状态码 + 品牌稳定词;⛔ 不查返佣百分比(口径数字会调,查数字必周期性误报,同 1.5亿 的教训)。
+  - name: jacktrader-home
+    url: https://www.jacktrader.xyz/
+    must_contain:
+      - "JackTrader"
+    max_response_ms: 8000
+    check_ssl: true
+
+  - name: jacktrader-en
+    url: https://www.jacktrader.xyz/en/
+    must_contain:
+      - "JackTrader"
+    max_response_ms: 8000
+
+  # GEO 资产:AI 引擎抓这份当事实源(见 project_jacktrader_geo_system),掛了等于 GEO 断供
+  - name: jacktrader-llms
+    url: https://www.jacktrader.xyz/llms-full.txt
+    must_contain:
+      - "JackTrader"
+    max_response_ms: 8000

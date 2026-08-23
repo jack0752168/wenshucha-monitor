@@ -29,7 +29,18 @@ sites:
   - name: lawyer-workbench
     url: https://tob.wenshucha.com/tob
     expected_status: [200, 301, 302, 307, 308]
+    must_contain:
+      - "文书查"       # 稳定品牌词
+      - "工作台"       # 稳定功能词;⛔ 别加规模数字(同 1.5亿 教训)
     max_response_ms: 8000
+    # 2026-08-23 biz-engine 补:本站 2026-08-12 已随三线一起从 Vercel 迁到腾讯云广州
+    #   (dig tob.wenshucha.com = 114.132.74.235,国内直连),而监控跑在走 EPN 全局 VPN 的 Mac 上
+    #   ⇒ 与 wenshucha-main 2026-07-29 那次「响应慢 169h 纯误报」是同一个根因,只是当时它还在
+    #   Vercel 全球 CDN 上所以被判定「不受影响」——那条判定已随迁移过时。
+    #   实测 2026-08-23 同一小时内 2567/3225/4855/4174/4499ms 正常,却夹着 21122ms 与 9011ms 两次
+    #   越线,status 全程 200 ⇒ 站没问题,是测量路径被 VPN 污染,面板长期不全绿。
+    #   按既有纪律置 false,可用性改由 状态码 + 上面两个关键词 + 15s 超时兜。
+    check_response_ms: false
     check_ssl: true
 
   # ========== MCP 接入站 ==========
@@ -147,3 +158,46 @@ sites:
     must_contain:
       - "JackTrader"
     max_response_ms: 8000
+
+  # ========== jacktrader 出站「钱路」监控(2026-08-23 biz-engine Line C 补入) ==========
+  # 为什么加:BL-088 补的是「站活着吗」,但站活着 ≠ 钱路活着。全站 70 个文件里的注册 CTA
+  #   只有两个出站链接(OKX join/TRADERJACK 128 处、Binance ref=MPZQWSDC 129 处),
+  #   而它们走的是交易所的**镜像域**,链路上还有会轮换的随机 .org 域(实测
+  #   promooboost.com → wjgfczxklby.org → btmwjnxqvkf.org,中间一跳是 base64 混淆的 JS 跳转)。
+  #   任何一跳失效 = 全站唯一现金流路径静默断掉,而站本身照样绿。今天以前零监控。
+  # ⛔ 三条纪律:①不查返佣百分比(会变,同 1.5亿 教训);②镜像链末端域会轮换,故**不**对
+  #   随机 .org 域做 must_contain_after_redirect,否则轮换即误报;③只查「能不能到、码有没有被吞」。
+  # ⚠️ 诚实边界:这三条都**证明不了推荐码还在计佣**——它们只证明链路可达、码没在跳转中被剥掉。
+  #   真正的绑定发生在浏览器端 JS / 交易所后台,headless 验不了(2026-08-23 已实测确认)。
+
+  # ① OKX 官方域自证:标题会渲染出 "My referral code: traderjack"。
+  #    这是唯一一条能在交易所自己域名上把码读出来的检查(镜像链读不到)。
+  #    红了 = 码在 OKX 侧不再解析(账号被停/码被改),比站掛更严重。
+  - name: jacktrader-okx-refcode
+    url: https://www.okx.com/join/TRADERJACK
+    must_contain:
+      - "traderjack"
+    must_contain_after_redirect:
+      - "okx.com"
+    max_response_ms: 15000
+    check_response_ms: false   # 交易所站走 EPN 出口,响应时间不可信;只兜可达性
+
+  # ② OKX 镜像链第一跳:全站 128 处 CTA 的实际入口。
+  #    只查状态码——末端域(wjgfczxklby.org 之类)会轮换,查内容必周期性误报。
+  - name: jacktrader-okx-mirror
+    url: https://www.promooboost.com/join/TRADERJACK
+    expected_status: [200]
+    max_response_ms: 15000
+    check_response_ms: false
+
+  # ③ Binance 镜像链:验「最终落在 binance.com 且 ref= 码还在」。
+  #    Binance 对非浏览器 UA 一律回 202 + 空 body(实测),故不能查关键词,只能查 final_url。
+  #    这条恰恰是最该查的——镜像若把 ref 参数吞掉,页面照样 200、佣金归零,肉眼看不出来。
+  - name: jacktrader-binance-ref
+    url: https://www.bsmkweb.cc/join?ref=MPZQWSDC
+    expected_status: [200, 202]
+    must_contain_after_redirect:
+      - "binance.com"
+      - "ref=MPZQWSDC"
+    max_response_ms: 15000
+    check_response_ms: false

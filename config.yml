@@ -51,6 +51,60 @@ sites:
     max_response_ms: 8000   # Vercel cold start 可能首次慢
     check_ssl: true
 
+  # ========== 真正在卖钱的三个接口(2026-09-16 补入)==========
+  # 为什么现在才加:上面的 mcp-zh 探的是 https://mcp.wenshucha.com/ —— 那是一个
+  #   **放在 .235 本地磁盘上的静态页**(mcp_wenshucha.conf: root /www/wwwroot/mcp + try_files)。
+  #   Mac mini 关机、隧道全断、ES 烧掉,那个页照样 200 + 含"文书查",监控全绿。
+  #   ⇒ 唯一在收费的 /mcp 端点,以及网页检索 /wscx /wscx2,在今天之前**从来没有被监控过**。
+  #   当时线上有两把付费客户 key 在用(江西宇洪团队版试用、云南省投资促进局免费版),
+  #   他们会先于我们发现故障。
+  # 这三条都穿 reverse SSH 隧道打到家里的 Mac mini,所以它们也是「mini 还活着吗」的探针。
+
+  # ① MCP 健康检查:GET 即可(不用 API key),穿 18304 隧道到 mini:8848,回真实库存笔数。
+  #    一条就能证明整条链路:nginx → 隧道 → mini 的 node → ES。
+  - name: mcp-endpoint-live
+    url: https://mcp.wenshucha.com/mcp/health
+    must_contain:
+      - '"ok":true'
+      - "wenshucha-mcp"
+    must_not_contain:
+      - '"records":0'      # ES 挂了但服务还在时的形态
+    max_response_ms: 15000
+    check_response_ms: false   # 走隧道回家里宽带,响应时间不可信;可用性靠状态码+关键词兜
+    check_ssl: true
+
+  # ② /wscx 全文检索(18300 → mini:3200)
+  #    ⛔ 别学 watchdog.sh 用空 q 探 —— 空 q 会回全库 total=160291678,除非 ES 死透否则永远绿。
+  #    这里用真实检索词,并断言回应里有案号,证明 ES 真的返回了数据而不只是回了 200。
+  - name: wscx-search
+    url: https://www.wenshucha.com/wscx/search?q=%E6%8B%96%E6%AC%A0%E5%8A%B3%E5%8A%A8%E6%8A%A5%E9%85%AC&pageSize=1
+    must_contain:
+      - '"case_no"'
+      - "民初"            # 案号里的稳定字段;⛔ 不查具体案号(排序会变)
+    must_not_contain:
+      - '"total": 0'
+      - '"cases": []'
+      - '"error"'
+    max_response_ms: 20000
+    check_response_ms: false
+    check_ssl: false      # 与 wenshucha-main 同证书,不重复测
+
+  # ③ /wscx2 检索新版(18305 → mini:3201)
+  #    ⚠️ es_search2.py 的契约是「出错也回 HTTP 200」,所以状态码完全不能当判据,
+  #       必须靠下面的关键词。掉分片时它仍回 200 但 total 会悄悄变小。
+  - name: wscx2-search
+    url: https://www.wenshucha.com/wscx2/search?q=%E6%8B%96%E6%AC%A0%E5%8A%B3%E5%8A%A8%E6%8A%A5%E9%85%AC&pageSize=1
+    must_contain:
+      - '"case_no"'
+      - "民初"
+    must_not_contain:
+      - '"total": 0'
+      - '"cases": []'
+      - '"error"'
+    max_response_ms: 20000
+    check_response_ms: false
+    check_ssl: false
+
   # ========== 海外英文站 SinoVerdict(2026-06-04 上线) ==========
   # 域名走 sinoverdict.wenshucha.com(主域子域,免买新域名),Vercel 部署 + 全球 CDN
   - name: sinoverdict-en

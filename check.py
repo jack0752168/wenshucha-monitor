@@ -52,9 +52,39 @@ def save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2, ensure_ascii=False))
 
 
+# 本机告警钩子:同目录下的 notify-local.sh(不在 git 里,每台机器自己放)。
+# 为什么要有这个:这份 check.py 同时跑在 Jack 的 Mac 和生产机 .235 上,而下面两个
+# 通道(iMessage 的 osascript、微信的 hermes)**只有 Mac 上存在**。
+# 2026-09-16 查到:.235 上 /root/.claude/bin/ 根本没有这两个脚本,所以这个监控在
+# 生产机上跑了几个月,每一次告警都静默地走到 "notify ALL FAILED" —— 监控在跑,
+# 但没有任何人收得到。而 .235 恰恰是唯一 24 小时在线、不依赖 Jack 家里的机器。
+NOTIFY_LOCAL = ROOT / "notify-local.sh"
+ALERT_LOG = ROOT / "alerts.log"
+
+
 def notify(msg: str) -> None:
-    """告警通知 — 优先 iMessage(主通道,osascript),失败回退微信(hermes)"""
+    """告警通知 — 本机钩子 → iMessage → 微信;并且无论如何都落一份到 alerts.log"""
     sent = False
+
+    # 落盘优先:通道全挂时至少有据可查,也给别的机器拉取转发用
+    try:
+        with ALERT_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"{now_iso()} {msg}\n")
+    except Exception as e:
+        print(f"[alert-log error] {e}")
+
+    # 通道 0:本机钩子(生产机 .235 用这个;Mac 上没有这个文件就跳过)
+    if NOTIFY_LOCAL.exists() and os.access(NOTIFY_LOCAL, os.X_OK):
+        try:
+            r = subprocess.run([str(NOTIFY_LOCAL), msg], timeout=25,
+                               check=False, capture_output=True, text=True)
+            if r.returncode == 0:
+                sent = True
+                print("[notify-local OK]")
+            else:
+                print(f"[notify-local fail rc={r.returncode}] {(r.stderr or '')[:200]}")
+        except Exception as e:
+            print(f"[notify-local error] {e}")
 
     # 主通道:iMessage(osascript → Messages.app → +8615627388666)
     if NOTIFY_IMESSAGE.exists() and os.access(NOTIFY_IMESSAGE, os.X_OK):

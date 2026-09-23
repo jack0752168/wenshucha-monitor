@@ -143,8 +143,9 @@ def check_site(site: dict, cfg_global: dict) -> dict:
     """跑单站检查,返回 {ok, status, reason, response_ms, ssl_days}"""
     url = site["url"]
     timeout = cfg_global.get("timeout_sec", 15)
-    # 单站可覆写 UA:Binance/OKX 对非浏览器 UA 会走另一条镜像/风控路径(连接重置、
-    # 或停在 jsredirect 中转域名),导致真链正常却误报。钱路检查必须用真浏览器 UA。
+    # 单站可覆写 UA。钱路(OKX/Binance 返佣链)用真浏览器 UA,测的才是真实用户
+    # 拿到的那条响应——交易所会按 UA 分流。(2026-09-23 订正:加这个能力的起因
+    # 是一次误诊,那次连红 14.7h 的真因是 VPN 出口楔死,不是 UA。)
     user_agent = site.get("user_agent") or cfg_global.get("user_agent", "wenshucha-monitor/1.0")
     expected_status = site.get("expected_status", [200])
     must_contain = site.get("must_contain", [])

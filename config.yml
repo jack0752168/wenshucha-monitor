@@ -229,7 +229,7 @@ sites:
   #    红了 = 码在 OKX 侧不再解析(账号被停/码被改),比站掛更严重。
   - name: jacktrader-okx-refcode
     url: https://www.okx.com/join/TRADERJACK
-    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 2026-09-22 起 OKX 对 wenshucha-monitor/1.0 直接 RST;真浏览器 UA 正常 200
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 用真浏览器 UA 测钱路:更贴近真实用户拿到的响应(交易所会按 UA 分流)
     must_contain:
       - "traderjack"
     must_contain_after_redirect:
@@ -250,7 +250,8 @@ sites:
   #    这条恰恰是最该查的——镜像若把 ref 参数吞掉,页面照样 200、佣金归零,肉眼看不出来。
   - name: jacktrader-binance-ref
     url: https://www.bsmkweb.cc/join?ref=MPZQWSDC
-    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 非浏览器 UA 会停在 bsappwv.cc/jsredirect 中转域,永远到不了 binance.com
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 同上。⚠️2026-09-23 订正:09-22 20:25 那次连红 14.7h 不是 UA 问题,
+    #   是 VPN 出口楔死(同窗口 bn2okx/ls-logger/Telegram/桌面App 全挂),重启即好。
     expected_status: [200, 202]
     must_contain_after_redirect:
       - "binance.com"

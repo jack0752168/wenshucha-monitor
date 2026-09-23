@@ -176,29 +176,42 @@ def check_site(site: dict, cfg_global: dict) -> dict:
         opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_ctx))
     else:
         opener = urllib.request.build_opener()
-    start = time.time()
-    try:
-        with opener.open(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
+    # 2026-09-23：单次 TLS EOF / 超时 ≠ 站挂了。本机走 EPN 全局 TUN,隧道被别的任务打满时
+    # 会整批 `EOF occurred in violation of protocol` —— 实测 bn2okx 每小时 :27 抓图+传图床+
+    # 驱动 Chrome,那一分钟全站延迟 350ms→12371ms,一轮报 5 个假故障(sinoverdict×2/legacy×2/
+    # binance-ref),复测全部 200。**只对「网络类」错误重试一次**;状态码、关键词这些是真断言,
+    # 不重试。别再让常态红把真故障盖掉(同 feedback_seo_no_vanity_metrics 的原则)。
+    last_net_err = None
+    for _attempt in range(2):
+        if _attempt:
+            time.sleep(3)
+        start = time.time()
+        try:
+            with opener.open(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                result["response_ms"] = int((time.time() - start) * 1000)
+                result["status"] = resp.status
+                result["final_url"] = resp.url
+            break
+        except urllib.error.HTTPError as e:
             result["response_ms"] = int((time.time() - start) * 1000)
-            result["status"] = resp.status
-            result["final_url"] = resp.url
-    except urllib.error.HTTPError as e:
-        result["response_ms"] = int((time.time() - start) * 1000)
-        result["status"] = e.code
-        if e.code in expected_status:
-            # 4xx / 3xx 在 expected 内,算 OK,但不读 body
-            result["ok"] = True
-            result["reason"] = f"HTTP {e.code}(在 expected_status 内)"
+            result["status"] = e.code
+            if e.code in expected_status:
+                # 4xx / 3xx 在 expected 内,算 OK,但不读 body
+                result["ok"] = True
+                result["reason"] = f"HTTP {e.code}(在 expected_status 内)"
+                return result
+            result["reason"] = f"HTTP {e.code}"
             return result
-        result["reason"] = f"HTTP {e.code}"
-        return result
-    except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
-        result["response_ms"] = int((time.time() - start) * 1000)
-        result["reason"] = f"网络错误: {e}"
-        return result
-    except Exception as e:
-        result["reason"] = f"未知错误: {type(e).__name__}: {e}"
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
+            result["response_ms"] = int((time.time() - start) * 1000)
+            last_net_err = e
+            continue
+        except Exception as e:
+            result["reason"] = f"未知错误: {type(e).__name__}: {e}"
+            return result
+    else:
+        result["reason"] = f"网络错误(重试 2 次仍失败): {last_net_err}"
         return result
 
     # 状态码检查

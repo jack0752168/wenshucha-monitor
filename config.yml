@@ -126,40 +126,6 @@ sites:
     max_response_ms: 8000
     check_ssl: false   # robots.txt 不重复测 SSL,主站已测
 
-  # ========== 赔了吗(4 个目标)— 2026-08-12 停用监控 ==========
-  # 原因:赔了吗已由 Jack 于 2026-08-11 决定下架,域名与路由均已下线,
-  #   `peilema.wenshucha.com` 现在连 DNS 记录都没有(dig 空,curl 000)。
-  #   ⇒ 这 4 个目标是在监控一个「故意删掉的产品」,必然永久失败:
-  #   自 08-11 02:43 起已连续红 36 小时,并会一直红下去。
-  #   监控里长期挂着一批永远红的目标,代价是真故障被淹没
-  #   ——jacktrader(唯一现金流资产)08-11 才刚补进本监控(BL-088),
-  #   如果面板常态是 10/15 红,它真掛的那天没人会看。
-  # 恢复方法:若赔了吗重新上线,取消下面注释即可(配置原样保留,未删)。
-  # - name: peilema-main
-  #   url: https://peilema.wenshucha.com/
-  #   must_contain:
-  #     - "赔了吗"
-  #   must_not_contain:
-  #     - "Application error"
-  #     - "Internal Server Error"
-  #   max_response_ms: 6000
-  #   check_ssl: true
-  #
-  # - name: peilema-xhs
-  #   url: https://peilema.wenshucha.com/xhs
-  #   expected_status: [200, 301, 302, 307, 308]
-  #   max_response_ms: 6000
-  #
-  # - name: peilema-sample
-  #   url: https://peilema.wenshucha.com/sample
-  #   expected_status: [200]
-  #   max_response_ms: 5000
-  #
-  # - name: peilema-service
-  #   url: https://peilema.wenshucha.com/service
-  #   expected_status: [200]
-  #   max_response_ms: 5000
-
   # ========== 数据满屋(同机房,顺手监控) ==========
   - name: datahouseful
     url: https://www.datahouseful.com/

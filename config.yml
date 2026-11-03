@@ -190,12 +190,20 @@ sites:
   # ⚠️ 诚实边界:这三条都**证明不了推荐码还在计佣**——它们只证明链路可达、码没在跳转中被剥掉。
   #   真正的绑定发生在浏览器端 JS / 交易所后台,headless 验不了(2026-08-23 已实测确认)。
 
-  # ① OKX 官方域检查已于 2026-11-03 撤掉。
-  #    2026-09-14 Jack 已放弃 OKX 整条返佣线;而且这条检查跑在墙内的 .235 上,
-  #    okx.com 必然超时。从 2026-08-23 起每天被报成「文书查故障已超 24 小时」,
-  #    主站和 MCP 当时都是绿的。不要加回来。
+  # ① OKX 官方域自证:标题会渲染出 "My referral code: traderjack"。
+  #    这是唯一一条能在交易所自己域名上把码读出来的检查(镜像链读不到)。
+  #    红了 = 码在 OKX 侧不再解析(账号被停/码被改),比站掛更严重。
+  - name: jacktrader-okx-refcode
+    url: https://www.okx.com/join/TRADERJACK
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 用真浏览器 UA 测钱路:更贴近真实用户拿到的响应(交易所会按 UA 分流)
+    must_contain:
+      - "traderjack"
+    must_contain_after_redirect:
+      - "okx.com"
+    max_response_ms: 15000
+    check_response_ms: false   # 交易所站走 EPN 出口,响应时间不可信;只兜可达性
 
-  # ② OKX 镜像链第一跳:全站旧 CTA 的实际入口。OKX 业务已停,只留可达性,不再当钱路告警。
+  # ② OKX 镜像链第一跳:全站 128 处 CTA 的实际入口。
   #    只查状态码——末端域(wjgfczxklby.org 之类)会轮换,查内容必周期性误报。
   - name: jacktrader-okx-mirror
     url: https://www.promooboost.com/join/TRADERJACK
@@ -203,17 +211,16 @@ sites:
     max_response_ms: 15000
     check_response_ms: false
 
-  # ③ Binance 镜像链:只验「ref= 码还在」。
+  # ③ Binance 镜像链:验「最终落在 binance.com 且 ref= 码还在」。
   #    Binance 对非浏览器 UA 一律回 202 + 空 body(实测),故不能查关键词,只能查 final_url。
-  #    2026-11-03 撤掉 binance.com 断言:镜像末端域会轮换(实测落在 bsappwv.cc/jsredirect),
-  #    .235 在墙内也到不了 binance.com。码还在却连红 70 多天,每天误报成文书查主站故障。
-  #    码被吞掉(final URL 不再含 ref=MPZQWSDC)仍会红,那才是钱路断了。
+  #    这条恰恰是最该查的——镜像若把 ref 参数吞掉,页面照样 200、佣金归零,肉眼看不出来。
   - name: jacktrader-binance-ref
     url: https://www.bsmkweb.cc/join?ref=MPZQWSDC
     user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   # 同上。⚠️2026-09-23 订正:09-22 20:25 那次连红 14.7h 不是 UA 问题,
     #   是 VPN 出口楔死(同窗口 bn2okx/ls-logger/Telegram/桌面App 全挂),重启即好。
     expected_status: [200, 202]
     must_contain_after_redirect:
+      - "binance.com"
       - "ref=MPZQWSDC"
     max_response_ms: 15000
     check_response_ms: false

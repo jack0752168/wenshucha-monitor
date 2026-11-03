@@ -140,7 +140,7 @@ def get_ssl_days_left(hostname: str, port: int = 443, timeout: int = 10) -> Opti
 
 
 def check_site(site: dict, cfg_global: dict) -> dict:
-    """跑单站检查,返回 {ok, status, reason, warn, response_ms, ssl_days}"""
+    """跑单站检查,返回 {ok, status, reason, response_ms, ssl_days}"""
     url = site["url"]
     timeout = cfg_global.get("timeout_sec", 15)
     # 单站可覆写 UA。钱路(OKX/Binance 返佣链)用真浏览器 UA,测的才是真实用户
@@ -254,15 +254,14 @@ def check_site(site: dict, cfg_global: dict) -> dict:
             result["ssl_days"] = days
             ssl_warn = cfg_global.get("ssl_warn_days", 14)
             if days is None:
-                # The independent expiry probe can fail after HTTPS/content checks pass.
-                # Keep expiry unknown and visible without declaring endpoint downtime.
-                result["warn"] = "SSL 憑證到期時間未知（獨立探測失敗）"
+                result["reason"] = "SSL 证书读取失败"
+                return result
             # 证书「即将到期」是警告,不是故障:站还在正常服务 200。
             # 2026-08-12 修:原本这里 return(ok=False)把健康站标成 down,
             # 而证书还有 13 天 ⇒ 会连续 13 天判定为故障,并在 24h 后发出
             # 「wenshucha-main 已 down 24 小时」这种与事实不符的告警。
             # 改为走独立的 warn 通道(措辞是到期日,不是 down 时长)。
-            elif days < ssl_warn:
+            if days < ssl_warn:
                 result["warn"] = f"SSL 证书 {days} 天后到期 (阈值 {ssl_warn})"
 
     result["ok"] = True
@@ -355,13 +354,7 @@ def main() -> int:
         print(f"  {flag} {r['name']:30} {ms:>8} {ssl_str:>9}{reason}")
 
     if new_alerts:
-        names = "、".join(r["name"] for r in new_alerts)
-        product = "文书查主站/MCP" if any(
-            r["name"].startswith(("wenshucha", "mcp", "wscx", "sinoverdict", "lawyer", "datahouse"))
-            for r in new_alerts
-        ) else "非文书查主站"
-        msg = (f"【监控告警 · 故障已持续超 {alert_after_hours} 小时】\n"
-               f"本次故障目标（{product}）：{names}\n")
+        msg = f"【wenshucha 监控告警 · 故障已持续超 {alert_after_hours} 小时】\n"
         for r in new_alerts:
             hrs = r.get("_down_hours", 0)
             msg += (f"\n• {r['name']}: {r['reason']}"
